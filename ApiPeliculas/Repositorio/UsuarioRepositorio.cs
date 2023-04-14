@@ -2,11 +2,12 @@
 using ApiPeliculas.Modelos;
 using ApiPeliculas.Modelos.Dtos;
 using ApiPeliculas.Repositorio.IRepositorio;
+using AutoMapper;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using XSystem.Security.Cryptography;
 
 namespace ApiPeliculas.Repositorio
 {
@@ -14,26 +15,34 @@ namespace ApiPeliculas.Repositorio
     {
         private readonly ApplicationDbContext _bd;
         private string claveSecreta;
+        private readonly UserManager<AppUsuario> _userManager;
+        private readonly RoleManager<IdentityRole> _roleManager;
+        private readonly IMapper _mapper;
 
-        public UsuarioRepositorio(ApplicationDbContext bd, IConfiguration config)
+        public UsuarioRepositorio(ApplicationDbContext bd, IConfiguration config,
+            UserManager<AppUsuario> userManager, RoleManager<IdentityRole> roleManager,
+            IMapper mapper)
         {
             _bd = bd;
             claveSecreta = config.GetValue<string>("ApiSettings:Secreta");
+            _userManager = userManager;
+            _roleManager = roleManager;
+            _mapper = mapper;
         }
 
-        public Usuario GetUsuario(int usuarioId)
+        public AppUsuario GetUsuario(string usuarioId)
         {
-            return _bd.Usuario.FirstOrDefault(u=> u.Id == usuarioId);
+            return _bd.AppUsuario.FirstOrDefault(u=> u.Id == usuarioId);
         }
 
-        public ICollection<Usuario> GetUsuarios()
+        public ICollection<AppUsuario> GetUsuarios()
         {
-            return _bd.Usuario.OrderBy(u=> u.NombreUsuario).ToList();
+            return _bd.AppUsuario.OrderBy(u=> u.UserName).ToList();
         }
 
         public bool IsUniqueUser(string usuario)
         {
-            var usuariobd = _bd.Usuario.FirstOrDefault(u => u.NombreUsuario == usuario);
+            var usuariobd = _bd.AppUsuario.FirstOrDefault(u => u.UserName == usuario);
             if (usuariobd == null)
             {
                 return true;
@@ -43,31 +52,54 @@ namespace ApiPeliculas.Repositorio
 
 
 
-        public async Task<Usuario> Registro(UsuarioRegistroDto usuarioRegistroDto)
+        public async Task<UsuarioDatosDto> Registro(UsuarioRegistroDto usuarioRegistroDto)
         {
-            var passwordEncriptado = Obtenermd5(usuarioRegistroDto.Password);
-            Usuario usuario = new Usuario()
+            AppUsuario usuario = new AppUsuario()
             {
-                NombreUsuario = usuarioRegistroDto.NombreUsuario,
-                Password= passwordEncriptado,
-                Nombre = usuarioRegistroDto.Nombre,
-                Role = usuarioRegistroDto.Role
+                UserName = usuarioRegistroDto.NombreUsuario,
+                Email = usuarioRegistroDto.NombreUsuario,
+                NormalizedEmail = usuarioRegistroDto.NombreUsuario.ToUpper(),
+                Nombre = usuarioRegistroDto.Nombre
             };
-            _bd.Usuario.Add(usuario);
-            await _bd.SaveChangesAsync();
-            usuario.Password = passwordEncriptado;
-            return usuario;
+
+            var result = await _userManager.CreateAsync(usuario, usuarioRegistroDto.Password);
+            if (result.Succeeded)
+            {
+                // SOLO LA PRIMERA VEZ Y ES PARA CREAR LOS ROLES
+                if (!_roleManager.RoleExistsAsync("admin").GetAwaiter().GetResult())
+                {
+                    await _roleManager.CreateAsync(new IdentityRole("admin"));
+                    await _roleManager.CreateAsync(new IdentityRole("registrado"));
+                }
+                await _userManager.AddToRoleAsync(usuario, "admin");
+                var usuarioRetornado = _bd.AppUsuario.FirstOrDefault(u => u.UserName == usuarioRegistroDto.NombreUsuario);
+                // Opción 1
+                /*return new UsuarioDatosDto()
+                {
+                    Id = usuarioRetornado.Id,
+                    UserName = usuarioRetornado.UserName,
+                    Nombre = usuarioRetornado.Nombre
+                };*/
+
+                // Opción 2
+                return _mapper.Map<UsuarioDatosDto>(usuarioRetornado);
+            }
+            
+
+            return new UsuarioDatosDto();
         }
 
         public async Task<UsuarioLoginRespuestaDto> Login(UsuarioLoginDto usuarioLoginDto)
         {
-            var passwordEncriptado = Obtenermd5(usuarioLoginDto.Password);
-            var usuario = _bd.Usuario.FirstOrDefault(
-                u => u.NombreUsuario.ToLower() == usuarioLoginDto.NombreUsuario.ToLower()
-                && u.Password == passwordEncriptado
+            // var passwordEncriptado = Obtenermd5(usuarioLoginDto.Password);
+            var usuario = _bd.AppUsuario.FirstOrDefault(
+                u => u.UserName.ToLower() == usuarioLoginDto.NombreUsuario.ToLower()
             );
+
+            bool isValida = await _userManager.CheckPasswordAsync(usuario, usuarioLoginDto.Password);
+
             // Validamos si el usuario no existe en la combinación de usuario y contraseña correcta
-            if (usuario == null)
+            if (usuario == null || isValida == false)
             {
                 return new UsuarioLoginRespuestaDto()
                 {
@@ -76,6 +108,8 @@ namespace ApiPeliculas.Repositorio
                 };
             }
             // Aquí existe el usuario entonces podemos procesar el login
+            var roles = await _userManager.GetRolesAsync(usuario);
+
             var manejadorToken = new JwtSecurityTokenHandler();
             var key = Encoding.ASCII.GetBytes(claveSecreta);
 
@@ -84,8 +118,8 @@ namespace ApiPeliculas.Repositorio
                 Subject = new ClaimsIdentity(
                     new Claim[]
                     {
-                        new Claim(ClaimTypes.Name, usuario.NombreUsuario.ToString()),
-                        new Claim(ClaimTypes.Role, usuario.Role)
+                        new Claim(ClaimTypes.Name, usuario.UserName.ToString()),
+                        new Claim(ClaimTypes.Role, roles.FirstOrDefault())
                     }),
                 Expires = DateTime.UtcNow.AddDays(7),
                 SigningCredentials = new(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
@@ -95,13 +129,13 @@ namespace ApiPeliculas.Repositorio
 
             UsuarioLoginRespuestaDto usuarioLoginRespuestaDto = new UsuarioLoginRespuestaDto()
             {
-                Token=manejadorToken.WriteToken(token),
-                Usuario= usuario
+                Token= manejadorToken.WriteToken(token),
+                Usuario= _mapper.Map<UsuarioDatosDto>(usuario)
             };
 
             return usuarioLoginRespuestaDto;
         }
-
+        /*
         // Método para encriptar con MD5
         public static string Obtenermd5(string valor)
         {
@@ -114,6 +148,6 @@ namespace ApiPeliculas.Repositorio
                 resp += data[i].ToString("x2").ToLower();
             }
             return resp;
-        }
+        }*/
     }
 }

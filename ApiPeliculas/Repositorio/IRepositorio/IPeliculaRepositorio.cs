@@ -2,6 +2,7 @@
 
 namespace ApiPeliculas.Repositorio.IRepositorio
 {
+
     public interface IPeliculaRepositorio {
         ICollection<Pelicula> GetPeliculas();
         Pelicula GetPelicula(int peliculaId);

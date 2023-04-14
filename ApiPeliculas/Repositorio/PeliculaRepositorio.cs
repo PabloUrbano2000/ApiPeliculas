@@ -2,10 +2,10 @@
 using ApiPeliculas.Modelos;
 using ApiPeliculas.Repositorio.IRepositorio;
 using Microsoft.EntityFrameworkCore;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace ApiPeliculas.Repositorio
 {
+
     public class PeliculaRepositorio : IPeliculaRepositorio
     {
         private readonly ApplicationDbContext _bd;

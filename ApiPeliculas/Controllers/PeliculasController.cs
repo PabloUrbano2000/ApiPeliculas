@@ -5,10 +5,10 @@ using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using System.Diagnostics.CodeAnalysis;
 
 namespace ApiPeliculas.Controllers
 {
+
     [Route("api/peliculas")]
     [ApiController]
     public class PeliculasController : ControllerBase

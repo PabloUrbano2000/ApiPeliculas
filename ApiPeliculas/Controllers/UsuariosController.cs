@@ -4,7 +4,6 @@ using ApiPeliculas.Repositorio.IRepositorio;
 using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Data;
 using System.Net;
 
 namespace ApiPeliculas.Controllers
@@ -41,14 +40,14 @@ namespace ApiPeliculas.Controllers
             return Ok(listaUsuariosDto);
         }
 
-        [AllowAnonymous]
-        [HttpGet("{usuarioId:int}", Name = "GetUsuario")]
+        [Authorize(Roles = "admin")]
+        [HttpGet("{usuarioId}", Name = "GetUsuario")]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public IActionResult GetUsuario(int usuarioId)
+        public IActionResult GetUsuario(string usuarioId)
         {
             var itemUsuario = _usRepo.GetUsuario(usuarioId);
             if (itemUsuario == null)
@@ -84,6 +83,7 @@ namespace ApiPeliculas.Controllers
             }
             _respuestaApi.StatusCode = HttpStatusCode.OK;
             _respuestaApi.IsSuccess = true;
+            _respuestaApi.Result = usuario;
             return Ok(_respuestaApi);
         }
 
